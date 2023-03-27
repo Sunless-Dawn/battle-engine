@@ -11,6 +11,8 @@ use std::sync::Mutex;
 
 use sunless_dawn_character::{Character, Class, EyeColor, HairColor, Sex, SkinColor};
 
+mod health;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
@@ -24,6 +26,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
+            .service(web::scope("/health").configure(health::config))
     })
     .bind(("127.0.0.1", 8080))? // TODO: add --bind and --port command line flags
     .run()
