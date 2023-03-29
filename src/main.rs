@@ -2,14 +2,12 @@ extern crate env_logger;
 
 use actix_web::{
     middleware::Logger,
-    web::{self, Data},
+    web::{self /*, Data*/},
     App, HttpServer,
 };
 use log::info;
 //use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-
-use sunless_dawn_character::{Character, Class, EyeColor, HairColor, Sex, SkinColor};
+//use std::sync::Mutex;
 
 mod battle;
 mod health;
@@ -23,11 +21,6 @@ async fn main() -> std::io::Result<()> {
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION")
     );
-
-    // just suppressing unused import warnings
-    {
-        let _ = Data::new(Mutex::new(Character::new("Name", Class::Mercenary, Sex::Male, HairColor::Black, EyeColor::Brown, SkinColor::Dark)));
-    }
 
     HttpServer::new(move || {
         App::new()
