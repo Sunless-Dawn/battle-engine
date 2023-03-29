@@ -11,6 +11,7 @@ use std::sync::Mutex;
 
 use sunless_dawn_character::{Character, Class, EyeColor, HairColor, Sex, SkinColor};
 
+mod battle;
 mod health;
 
 #[actix_web::main]
@@ -27,6 +28,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .service(web::scope("/health").configure(health::config))
+            .route("/ws/", web::get().to(battle::websocket_route))
     })
     .bind(("127.0.0.1", 8080))? // TODO: add --bind and --port command line flags
     .run()
