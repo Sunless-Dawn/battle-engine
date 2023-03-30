@@ -6,10 +6,10 @@ use bytestring::ByteString;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::collections::HashMap;
-use chrono::{DateTime, Local, Utc};
+use chrono::{/*DateTime, Local,*/ Utc};
 use sunless_dawn_character::Character;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "chat")]
 pub struct ChatMessage {
     sender: String,
@@ -37,9 +37,13 @@ pub enum Response {
     AuthenticateChallenge { message: String },
 }
 
+pub type ChatMessages = HashMap<String, ChatMessage>;
+
 #[derive(Clone)]
 pub struct PlayerWS {
     data: web::Data<Mutex<crate::ServerData>>,
+    address: String,
+    chat: ChatMessages,
 }
 
 impl PlayerWS {
@@ -62,12 +66,13 @@ impl PlayerWS {
         }
     }
 
-    pub fn authenticate(&self, address: &String) {
+    pub fn authenticate(&mut self, address: &String) {
         let mut unlocked_data = self.data.lock().unwrap(); // TODO: error handling
         match unlocked_data.insert(address.clone(), self.clone()) { // TODO: not sure clone is appropriate, may need to arc this
             Some(_) => (),
             None => (),
         }
+        self.address = address.clone();
     }
 
     pub fn list_players(&self, ctx: &mut <PlayerWS as Actor>::Context) {
@@ -79,17 +84,26 @@ impl PlayerWS {
         ctx.text(json);
     }
 
-    pub fn chat(&self, recipient: &String, message: &String) {
-        let unlocked_data = self.data.lock().unwrap(); // TODO: error handling
+    pub fn chat(&mut self, recipient: &String, message: &String) {
+        let msg = ChatMessage {
+            sender: self.address.clone(),
+            recipient: recipient.clone(),
+            message: message.clone(),
+            timestamp: chrono::offset::Utc::now(),
+        };
 
-        match unlocked_data.get(recipient) {
-            Some(player) => player.receive_chat(message),
+        // store a copy of this message in our chat history
+        self.chat.insert(msg.recipient.clone(), msg.clone());
+        let mut unlocked_data = self.data.lock().unwrap(); // TODO: error handling
+
+        match unlocked_data.get_mut(recipient) {
+            Some(player) => player.receive_chat(msg.clone()),
             None => (),
         }
     }
 
-    pub fn receive_chat(&self, message: &String) {
-        //ctx.text(message);
+    pub fn receive_chat(&mut self, message: ChatMessage) {
+        self.chat.insert(message.sender.clone(), message.clone());
     }
 
     pub fn new_character(&mut self, ctx: &mut <PlayerWS as Actor>::Context) {
@@ -124,5 +138,5 @@ pub async fn player_ws_route(
     stream: Payload,
     locked_data: web::Data<Mutex<crate::ServerData>>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    ws::start(PlayerWS { data: locked_data }, &req, stream)
+    ws::start(PlayerWS { data: locked_data, address: String::from(""), chat: ChatMessages::new() }, &req, stream)
 }
