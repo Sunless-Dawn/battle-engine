@@ -108,10 +108,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for PlayerWS {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Pong(msg)) => ctx.ping(&msg),
             Ok(ws::Message::Text(text)) => self.route_message(&text, ctx),
             Ok(ws::Message::Binary(_)) => ctx.close(Some(ws::CloseCode::Unsupported.into())),
             Ok(ws::Message::Close(reason)) => ctx.close(reason),
-            _ => (),
+            Ok(ws::Message::Continuation(_)) => ctx.close(Some(ws::CloseCode::Unsupported.into())),
+            Ok(ws::Message::Nop) => (),
+            Err(_) => ctx.close(Some(ws::CloseCode::Protocol.into())),
         }
     }
 }
