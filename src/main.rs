@@ -1,25 +1,18 @@
 extern crate env_logger;
 
+use actix::prelude::*;
 use actix_web::{
     middleware::Logger,
     web::{self, Data},
     App, HttpServer,
 };
 use log::info;
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::Arc;
 
 mod battle;
 mod health;
-
-pub type ServerData = HashMap<String, battle::PlayerWS>;
-/*
-pub struct ServerData {
-    pub users
-    pub users: []String,
-    pub
-}
-*/
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -31,11 +24,11 @@ async fn main() -> std::io::Result<()> {
         env!("CARGO_PKG_VERSION")
     );
 
-    let data = Data::new(Mutex::new(ServerData::new()));
+    let clients = Arc::new(Mutex::new(Vec::<Addr<battle::PlayerWS>>::new()));
 
     HttpServer::new(move || {
         App::new()
-            .app_data(Data::clone(&data))
+            .app_data(web::Data::new(clients.clone()))
             .wrap(Logger::default())
             .service(web::scope("/health").configure(health::config))
             .route("/ws/", web::get().to(battle::player_ws_route))

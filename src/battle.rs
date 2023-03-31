@@ -1,13 +1,17 @@
-use actix::{Actor, StreamHandler};
+use actix::prelude::*;
+
 use actix_web::web::Payload;
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use bytestring::ByteString;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 use std::collections::HashMap;
-use chrono::{/*DateTime, Local,*/ Utc};
+use std::sync::Arc;
+use std::sync::Mutex;
 use sunless_dawn_character::Character;
+
+use log::info;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "chat")]
@@ -39,14 +43,27 @@ pub enum Response {
 
 pub type ChatMessages = HashMap<String, ChatMessage>;
 
+pub struct PlayerClient {}
+
 #[derive(Clone)]
 pub struct PlayerWS {
-    data: web::Data<Mutex<crate::ServerData>>,
+    addr: Option<Addr<PlayerWS>>,
+    clients: Arc<Mutex<Vec<Addr<PlayerWS>>>>,
+    //data: web::Data<Mutex<crate::ServerData>>,
     address: String,
     chat: ChatMessages,
 }
 
 impl PlayerWS {
+    fn new(clients: Arc<Mutex<Vec<Addr<PlayerWS>>>>) -> Self {
+        Self {
+            addr: None,
+            clients,
+            address: String::from(""),
+            chat: ChatMessages::new(),
+        }
+    }
+
     pub fn route_message(&mut self, message: &str, ctx: &mut <PlayerWS as Actor>::Context) {
         let result = serde_json::from_str::<Action>(message);
         match result {
@@ -67,25 +84,27 @@ impl PlayerWS {
     }
 
     pub fn authenticate(&mut self, address: &String) {
-        let mut unlocked_data = self.data.lock().unwrap(); // TODO: error handling
-        match unlocked_data.insert(address.clone(), self.clone()) { // TODO: not sure clone is appropriate, may need to arc this
+        /*let mut unlocked_data = self.data.lock().unwrap(); // TODO: error handling
+        match unlocked_data.insert(address.clone(), self.clone()) {
+            // TODO: not sure clone is appropriate, may need to arc this
             Some(_) => (),
             None => (),
         }
-        self.address = address.clone();
+        self.address = address.clone();*/
     }
 
     pub fn list_players(&self, ctx: &mut <PlayerWS as Actor>::Context) {
-        let unlocked_data = self.data.lock().unwrap();
+        /*let unlocked_data = self.data.lock().unwrap();
 
         let users: Vec<String> = unlocked_data.keys().cloned().collect();
 
         let json = serde_json::to_string(&users).unwrap();
         ctx.text(json);
+        */
     }
 
     pub fn chat(&mut self, recipient: &String, message: &String) {
-        let msg = ChatMessage {
+        /*let msg = ChatMessage {
             sender: self.address.clone(),
             recipient: recipient.clone(),
             message: message.clone(),
@@ -99,11 +118,11 @@ impl PlayerWS {
         match unlocked_data.get_mut(recipient) {
             Some(player) => player.receive_chat(msg.clone()),
             None => (),
-        }
+        }*/
     }
 
     pub fn receive_chat(&mut self, message: ChatMessage) {
-        self.chat.insert(message.sender.clone(), message.clone());
+        //self.chat.insert(message.sender.clone(), message.clone());
     }
 
     pub fn new_character(&mut self, ctx: &mut <PlayerWS as Actor>::Context) {
@@ -116,6 +135,29 @@ impl PlayerWS {
 
 impl Actor for PlayerWS {
     type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let addr = ctx.address();
+
+        info!("PlayerWS connected {addr:?}");
+
+        // Register the WebSocket actor's address in the shared state
+        self.clients.lock().unwrap().push(addr.clone());
+
+        // Set the WebSocket actor's address
+        self.addr = Some(addr);
+    }
+
+    fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
+        if let Some(addr) = self.addr.take() {
+            info!("PlayerWS disconnected {addr:?}");
+            let mut clients = self.clients.lock().unwrap();
+            if let Some(pos) = clients.iter().position(|client| *client == addr) {
+                clients.remove(pos);
+            }
+        }
+        Running::Stop
+    }
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for PlayerWS {
@@ -136,7 +178,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for PlayerWS {
 pub async fn player_ws_route(
     req: HttpRequest,
     stream: Payload,
-    locked_data: web::Data<Mutex<crate::ServerData>>,
+    clients: web::Data<Arc<Mutex<Vec<Addr<PlayerWS>>>>>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    ws::start(PlayerWS { data: locked_data, address: String::from(""), chat: ChatMessages::new() }, &req, stream)
+    let player_ws = PlayerWS::new(clients.get_ref().clone());
+    ws::start(
+        player_ws,
+        &req,
+        stream,
+    )
 }
