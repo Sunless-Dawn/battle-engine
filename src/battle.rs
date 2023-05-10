@@ -48,14 +48,14 @@ pub struct PlayerClient {}
 #[derive(Clone)]
 pub struct PlayerWS {
     addr: Option<Addr<PlayerWS>>,
-    clients: Arc<Mutex<Vec<Addr<PlayerWS>>>>,
+    clients: Arc<Mutex<Vec<Arc<PlayerWS>>>>,
     //data: web::Data<Mutex<crate::ServerData>>,
     address: String,
     chat: ChatMessages,
 }
 
 impl PlayerWS {
-    fn new(clients: Arc<Mutex<Vec<Addr<PlayerWS>>>>) -> Self {
+    fn new(clients: Arc<Mutex<Vec<Arc<PlayerWS>>>>) -> Self {
         Self {
             addr: None,
             clients,
@@ -84,16 +84,16 @@ impl PlayerWS {
     }
 
     pub fn authenticate(&mut self, address: &String) {
-        /*let mut unlocked_data = self.data.lock().unwrap(); // TODO: error handling
-        match unlocked_data.insert(address.clone(), self.clone()) {
-            // TODO: not sure clone is appropriate, may need to arc this
-            Some(_) => (),
-            None => (),
-        }
-        self.address = address.clone();*/
+        // TODO: check a signature
+        self.address = address.clone();
     }
 
     pub fn list_players(&self, ctx: &mut <PlayerWS as Actor>::Context) {
+        let clients = self.clients.lock().unwrap();
+
+        for client in clients.iter() {
+            client.do_send(ws::Message::Text(message.to_string())).unwrap();
+        }
         /*let unlocked_data = self.data.lock().unwrap();
 
         let users: Vec<String> = unlocked_data.keys().cloned().collect();
@@ -152,7 +152,7 @@ impl Actor for PlayerWS {
         if let Some(addr) = self.addr.take() {
             info!("PlayerWS disconnected {addr:?}");
             let mut clients = self.clients.lock().unwrap();
-            if let Some(pos) = clients.iter().position(|client| *client == addr) {
+            if let Some(pos) = clients.iter().position(|client| *client.addr == addr) {
                 clients.remove(pos);
             }
         }
